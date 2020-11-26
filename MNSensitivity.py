@@ -1,4 +1,17 @@
 from enum import Enum
+import copy
+
+class Network:
+
+    def __init__(self, circ:list, Z_s:complex, Z_l:complex, freq:float):
+
+        self.circ = circ
+        self.Z_s = Z_s
+        self.Z_l = Z_l
+        self.freq = freq
+        self.V_in = 1
+
+
 
 class Passive(Enum):
     """ Defines an enumerated type for specifying if a given component is
@@ -294,3 +307,63 @@ def Z_out(circuit:list, freq:float, Zsource:complex):
             Zout = Zout + comp.Z(freq)
 
     return Zout
+
+def P_load(Z_l:complex, Z_s:complex, Vin:float=1):
+
+    return Vin**2 * Z_l/(Z_l+Z_s)**2
+
+def P_net(network):
+
+    return P_load(network.Z_l, Z_out(network.circ, network.freq, network.Z_s), network.V_in)
+
+def sensitivity(network, param:str, val):
+
+    if type(val) != float and type(val) != float and type(val) != int:
+        print("ERROR: Value must be float, complex or int type.")
+        return None
+
+    net = copy.deepcopy(network)
+
+    if param.upper() == "FREQ":
+        net.freq = val
+    elif param.upper() == "Z_L":
+        net.Z_l = val
+    elif param.upper() == "Z_S":
+        net.Z_s = val
+    elif param.upper() == "VIN":
+        net.V_in = val
+    else:
+        words = param.split()
+        if len(words) < 2:
+            print("ERROR: Invalid parameter. Fewer than two words.")
+            return None
+        element_name = words[0]
+        val_name = words[1]
+
+        element = None
+        for t in circuit:
+            if t[0].name.upper() == element_name.upper():
+                element = t[0]
+
+        if element == None:
+            print("ERROR: Element not found.")
+            return None
+
+        if val_name.upper() == "C":
+            element.val.C = val
+        elif val_name.upper() == "L":
+            element.val.L = val
+        elif val_name.upper() == "R":
+            element.val.R = val
+        else:
+            print(f"ERROR: Invalid element parameter '{val_name}'.")
+            return None
+
+    P0 = P_net(network)
+    P1 = P_net(net)
+
+    dP = P1-P0
+
+    dPdV = dP/val
+
+    return (dPdV, dP, P0, P1)
