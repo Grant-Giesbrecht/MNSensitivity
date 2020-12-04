@@ -11,6 +11,16 @@ class Network:
         self.freq = freq
         self.V_in = 1
 
+    def __str__(self):
+        out = f"Zs: {self.Z_s} ohms, Zl: {self.Z_l} ohms, freq: {self.freq} Hz, V_in: {self.V_in} V\n"
+        for c in self.circ:
+            a = c[0]
+            b = c[1]
+            out = out + f"\t{a},\t {b}\n"
+        return out
+
+    def __repr__(self):
+        return self.__str__()
 
 
 class Passive(Enum):
@@ -60,6 +70,13 @@ class Component:
         self.name = "Unnamed Component"
 
         self.read_vals(init_str)
+
+    def __str__(self):
+
+        return f"{self.name}({self.type}) = R:{self.val.R}, C:{self.val.C}, L:{self.val.L}"
+
+    def __repr__(self):
+        return self.__str__()
 
     def read_vals(self, init_str:str):
         """ Reads values from an initialization string and stores them in the
@@ -158,7 +175,7 @@ class Component:
         if self.val.C == 0 or f == 0:
             return None
 
-        return complex(0, 1)/(2*3.14159*f*self.val.C)
+        return complex(0, -1)/(2*3.14159*f*self.val.C)
 
     def Z_L(self, f:float):
         """ Calculates the impedance of a capacitor """
@@ -310,13 +327,21 @@ def Z_out(circuit:list, freq:float, Zsource:complex):
 
 def P_load(Z_l:complex, Z_s:complex, Vin:float=1):
 
-    return Vin**2 * Z_l/(Z_l+Z_s)**2
+    return Vin**2 * Z_l.real/(Z_l+Z_s)**2
 
 def P_net(network):
 
     return P_load(network.Z_l, Z_out(network.circ, network.freq, network.Z_s), network.V_in)
 
-def sensitivity(network, param:str, val):
+def tau_net(network):
+    Z_net = Z_out(network.circ, network.freq, network.Z_s)
+    return (4*network.Z_l*Z_net)/(network.Z_l**2 + 2*network.Z_l*Z_net + Z_net**2)
+
+def sens_percent(network, param:str, val):
+    """
+    val: multiplier (2 -> +100%, 1 -> no change, etc)
+    """
+
 
     if type(val) != float and type(val) != float and type(val) != int:
         print("ERROR: Value must be float, complex or int type.")
@@ -325,13 +350,17 @@ def sensitivity(network, param:str, val):
     net = copy.deepcopy(network)
 
     if param.upper() == "FREQ":
-        net.freq = val
+        net.freq *= val
+        dv = net.freq*abs(val-1)
     elif param.upper() == "Z_L":
-        net.Z_l = val
+        net.Z_l *= val
+        dv = net.Z_l*abs(val-1)
     elif param.upper() == "Z_S":
-        net.Z_s = val
+        net.Z_s *= val
+        dv = net.Z_s*abs(val-1)
     elif param.upper() == "VIN":
-        net.V_in = val
+        net.V_in *= val
+        dv = net.V_in*abs(val-1)
     else:
         words = param.split()
         if len(words) < 2:
@@ -341,7 +370,7 @@ def sensitivity(network, param:str, val):
         val_name = words[1]
 
         element = None
-        for t in circuit:
+        for t in net.circ:
             if t[0].name.upper() == element_name.upper():
                 element = t[0]
 
@@ -350,14 +379,129 @@ def sensitivity(network, param:str, val):
             return None
 
         if val_name.upper() == "C":
-            element.val.C = val
+            element.val.C *= val
+            dv = element.val.C*abs(val-1)
         elif val_name.upper() == "L":
-            element.val.L = val
+            element.val.L *= val
+            dv = element.val.L*abs(val-1)
         elif val_name.upper() == "R":
-            element.val.R = val
+            element.val.R *= val
+            dv = element.val.R*abs(val-1)
         else:
             print(f"ERROR: Invalid element parameter '{val_name}'.")
             return None
+
+    t0 = tau_net(network)
+    t1 = tau_net(net)
+    dT = t1-t0
+    dTdV = dT/dv
+    print(f"dv = {dv} val={val}")
+    return (dTdV, dT, t0, t1)
+
+def sens_pcnt(network, param:str, val=1):
+    """
+    Same as sens_percent() except val is in percent-100
+    ie. val=1 -> multiplier of 1.01, val=0 -> multiplier 1, val 50 -> multiplier 1.5
+
+    has abbreviated return
+    """
+
+    return abs(sens_percent(network, param, 1+val/100.0)[0])
+
+def sens_percent(network, param:str, val):
+    """
+    val: multiplier (2 -> +100%, 1 -> no change, etc)
+    """
+
+
+    if type(val) != float and type(val) != float and type(val) != int:
+        print("ERROR: Value must be float, complex or int type.")
+        return None
+
+    if param.upper() == "FREQ":
+        dv = network.freq*abs(val-1)
+    elif param.upper() == "Z_L":
+        dv = network.Z_l*abs(val-1)
+    elif param.upper() == "Z_S":
+        dv = network.Z_s*abs(val-1)
+    elif param.upper() == "VIN":
+        dv = network.V_in*abs(val-1)
+    else:
+        words = param.split()
+        if len(words) < 2:
+            print("ERROR: Invalid parameter. Fewer than two words.")
+            return None
+        element_name = words[0]
+        val_name = words[1]
+
+        element = None
+        for t in network.circ:
+            if t[0].name.upper() == element_name.upper():
+                element = t[0]
+
+        if element == None:
+            print("ERROR: Element not found.")
+            return None
+
+        if val_name.upper() == "C":
+            dv = element.val.C*abs(val-1)
+        elif val_name.upper() == "L":
+            dv = element.val.L*abs(val-1)
+        elif val_name.upper() == "R":
+            dv = element.val.R*abs(val-1)
+
+
+    return sensitivity(network, param, dv, True)
+
+def sensitivity(network, param:str, val, use_tau=False):
+
+    if type(val) != float and type(val) != float and type(val) != int:
+        print("ERROR: Value must be float, complex or int type.")
+        return None
+
+    net = copy.deepcopy(network)
+
+    if param.upper() == "FREQ":
+        net.freq += val
+    elif param.upper() == "Z_L":
+        net.Z_l += val
+    elif param.upper() == "Z_S":
+        net.Z_s += val
+    elif param.upper() == "VIN":
+        net.V_in += val
+    else:
+        words = param.split()
+        if len(words) < 2:
+            print("ERROR: Invalid parameter. Fewer than two words.")
+            return None
+        element_name = words[0]
+        val_name = words[1]
+
+        element = None
+        for t in net.circ:
+            if t[0].name.upper() == element_name.upper():
+                element = t[0]
+
+        if element == None:
+            print("ERROR: Element not found.")
+            return None
+
+        if val_name.upper() == "C":
+            element.val.C += val
+        elif val_name.upper() == "L":
+            element.val.L += val
+        elif val_name.upper() == "R":
+            element.val.R += val
+        else:
+            print(f"ERROR: Invalid element parameter '{val_name}'.")
+            return None
+
+    if use_tau:
+        t0 = tau_net(network)
+        t1 = tau_net(net)
+        dT = t1-t0
+        dTdV = dT/val
+        return (dTdV, dT, t0, t1)
 
     P0 = P_net(network)
     P1 = P_net(net)
@@ -367,3 +511,49 @@ def sensitivity(network, param:str, val):
     dPdV = dP/val
 
     return (dPdV, dP, P0, P1)
+
+def get_spectrum_pcnt(network, param, fs, val=1):
+
+    f_orig = network.freq
+
+    sens = []
+
+    for f in fs:
+        network.freq = f
+        sens.append(sens_pcnt(network, param, val))
+
+    network.freq = f_orig
+
+    return sens
+
+def get_spectrum_val(network, param, fs, val):
+
+    f_orig = network.freq
+
+    sens = []
+
+    for f in fs:
+        network.freq = f
+        sens.append(abs(sensitivity(network, param, val, True)[0]))
+        # sens.append(sens_pcnt(network, param, val))
+
+    network.freq = f_orig
+
+    return sens
+
+def get_spectrum_norm(network, param, fs, val=1, abs_val=None):
+
+    f_orig = network.freq
+
+    sens = []
+
+    for f in fs:
+        network.freq = f
+        if abs_val is not None:
+            sens.append(abs(sensitivity(network, param, abs_val, use_tau=True)[1]))
+        else:
+            sens.append(abs(sens_percent(network, param, 1+val/100.0)[1]))
+
+    network.freq = f_orig
+
+    return sens
