@@ -1,6 +1,8 @@
 from MNSensitivity import *
 import numpy as np
 import matplotlib.pyplot as plot
+plot.rcParams["font.family"] = "Times New Roman"
+plot.rcParams.update({'font.size': 18})
 
 circ = load_circuit("low_pass.mc")
 print_circuit(circ)
@@ -40,14 +42,15 @@ for f in fs:
     sens.append(s_new)
     f_mhz.append(f/1e6)
 
-fig = plot.figure()
+fig = plot.figure(figsize=(8, 6))
 ax1 = fig.add_subplot(111)
-ax1.semilogx(f_mhz, sens)
+ax1.semilogx(f_mhz, sens, color=(0, 0, .8))
 ax1.grid(True)
 
 ax1.set_xlabel("Frequency (MHz)")
-ax1.set_ylabel("Sensitivity (1/nH)")
+ax1.set_ylabel("|Sensitivity| (1/nH)")
 ax1.set_title("Sensitivity to L1 vs Frequency for Simple Network")
+ax1.semilogx([500, 500], [min(sens), max(sens)], linestyle='--', linewidth=1.5, color=(.1, .1, .1))
 plot.show()
 # print(f"\n\tZout at 1 kHz = {Z_out(circ, 1e3, complex(50, 0) )}")
 #
